@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Jupyter (in case scratch notebooks land in the repo)
+.ipynb_checkpoints/
+
+# Local urls (if generated post-deploy)
+urls.txt
+
+# IMPORTANT: data/ files are committed on purpose.
+# Do NOT add data/*.csv or data/*.json to this gitignore — those files ARE
+# the thesis output, and the dashboard's contract with the thesis depends on
+# them being version-controlled. The only data file that may be missing is
+# data/per_container_r2.csv (1.4 MB) — that one IS committed once you copy
+# it over from the thesis repo's results/alibaba/diagnostics/ folder.

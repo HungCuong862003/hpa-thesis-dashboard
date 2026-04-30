@@ -1,0 +1,19 @@
+# HPA Thesis Dashboard — pinned dependencies
+# Pins match what was tested locally on Day 1. Streamlit Cloud free tier
+# will install these into a Python 3.11 environment by default.
+#
+# Do NOT add streamlit-shap or streamlit-plotly-events:
+# - Phase 0 found no SHAP .joblib exists, so SHAP page is aggregate-only.
+# - Streamlit 1.30+ has native st.plotly_chart on_select callbacks; the
+#   third-party plotly-events package is no longer needed.
+#
+# scikit-learn pinned to 1.5.2 because 1.6+ broke MAPIE CQR during thesis
+# pipeline runs. The dashboard does not call MAPIE, but pinning keeps the
+# environment identical to the thesis repo.
+
+streamlit==1.55.0
+pandas==2.2.3
+numpy==1.26.4
+plotly==5.24.1
+scikit-learn==1.5.2
+pyarrow==17.0.0
