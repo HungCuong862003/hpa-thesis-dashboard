@@ -239,6 +239,147 @@ check("TimesFM AUC == 0.80", abs(tfm - 0.80) < 0.01, f"got {tfm:.3f}")
 
 
 # ======================================================================
+# 13. Day 2 lag-sensitivity anchors  (computed from hpa_simulation_v2.csv)
+# ======================================================================
+print(f"\n{YELLOW}[13] Day 2 lag-sensitivity anchors{RESET}")
+hpa = pd.read_csv(DATA_DIR / "hpa_simulation_v2.csv")
+EPS = 1e-9
+
+
+def _weakly_dom(av, aw, bv, bw):
+    return ((av <= bv + EPS and aw <= bw + EPS)
+            and (av < bv - EPS or aw < bw - EPS))
+
+
+def _count_per_lag(lag):
+    counts = {"P": 0, "R": 0, "N": 0}
+    for (h, tu, sm), grp in hpa.groupby(["Horizon", "target_util", "safety_margin"]):
+        ml = grp[grp.Strategy == "ML-Proactive"]
+        rx = grp[(grp.Strategy == "Reactive")
+                 & (grp.variant == f"lag={lag}_tu={tu:.1f}")]
+        if len(ml) != 1 or len(rx) != 1:
+            continue
+        ml, rx = ml.iloc[0], rx.iloc[0]
+        if _weakly_dom(ml.violation_rate, ml.waste_rate,
+                       rx.violation_rate, rx.waste_rate):
+            counts["P"] += 1
+        elif _weakly_dom(rx.violation_rate, rx.waste_rate,
+                         ml.violation_rate, ml.waste_rate):
+            counts["R"] += 1
+        else:
+            counts["N"] += 1
+    return counts
+
+
+# Anchor numbers — these MUST match modules/verdict_templates.LAG_DOMINANCE.
+expected = {
+    1: {"P": 95, "R": 2, "N": 63},
+    2: {"P": 132, "R": 0, "N": 28},
+    3: {"P": 149, "R": 0, "N": 11},
+    4: {"P": 157, "R": 0, "N": 3},
+}
+for lag in (1, 2, 3, 4):
+    got = _count_per_lag(lag)
+    exp = expected[lag]
+    check(
+        f"Lag-sensitivity at lag={lag}: "
+        f"Proactive={exp['P']}, Reactive={exp['R']}, Neither={exp['N']}",
+        got == exp,
+        f"got P={got['P']}, R={got['R']}, N={got['N']}",
+    )
+
+
+# ======================================================================
+# 14. Per-dataset ACF@24h > 0.2 fractions
+# ======================================================================
+print(f"\n{YELLOW}[14] per-dataset ACF@24h > 0.2 fractions{RESET}")
+ali = pd.read_csv(DATA_DIR / "omega_alibaba.csv")
+bb = pd.read_csv(DATA_DIR / "omega_bitbrains.csv")
+bd = pd.read_csv(DATA_DIR / "bytedance_per_instance_stats.csv")
+ali_pos = (ali.acf_24h > 0.2).sum()
+bb_pos  = (bb.acf_24h > 0.2).sum()
+bd_pos  = (bd.acf_24h > 0.2).sum()
+check("Alibaba: 2535/4902 (51.7%) have ACF@24h > 0.2",
+      ali_pos == 2535 and len(ali) == 4902,
+      f"got {ali_pos}/{len(ali)}")
+check("Bitbrains: 61/156 (39.1%) have ACF@24h > 0.2",
+      bb_pos == 61 and len(bb) == 156,
+      f"got {bb_pos}/{len(bb)}")
+check("ByteDance: 67/93 (72.0%) have ACF@24h > 0.2",
+      bd_pos == 67 and len(bd) == 93,
+      f"got {bd_pos}/{len(bd)}")
+
+
+# ======================================================================
+# 15. Day 2: verdict_templates and recommend smoke test
+# ======================================================================
+print(f"\n{YELLOW}[15] Day 2 modules: verdict_templates + recommend{RESET}")
+import importlib.util
+
+# Make modules/ importable from this script's location.
+sys.path.insert(0, str(DATA_DIR.parent))
+try:
+    from modules import verdict_templates as vt
+    from modules import recommend as rcm
+    check("modules.verdict_templates and modules.recommend import",
+          True, "")
+except Exception as exc:
+    check("modules.verdict_templates and modules.recommend import",
+          False, str(exc))
+    vt = rcm = None
+
+if vt is not None and rcm is not None:
+    # Anchor consistency: LAG_DOMINANCE in verdict_templates matches the
+    # numbers we just computed from the data file.
+    for lag in (1, 2, 3, 4):
+        e = expected[lag]
+        m = vt.LAG_DOMINANCE[lag]
+        check(
+            f"verdict_templates.LAG_DOMINANCE[{lag}] matches computed counts",
+            (m["proactive"] == e["P"]
+             and m["reactive"] == e["R"]
+             and m["neither"] == e["N"]),
+            f"module says P={m['proactive']}, R={m['reactive']}, "
+            f"N={m['neither']}; computed P={e['P']}, R={e['R']}, N={e['N']}",
+        )
+    # ACF fractions in verdict_templates match.
+    af = vt.ACF_FRACTIONS
+    check("verdict_templates.ACF_FRACTIONS Bitbrains == 61/156",
+          af["Bitbrains"]["n_pos"] == 61 and af["Bitbrains"]["n_total"] == 156)
+    check("verdict_templates.ACF_FRACTIONS Alibaba == 2535/4902",
+          af["Alibaba"]["n_pos"] == 2535 and af["Alibaba"]["n_total"] == 4902)
+    check("verdict_templates.ACF_FRACTIONS ByteDance == 67/93",
+          af["ByteDance"]["n_pos"] == 67 and af["ByteDance"]["n_total"] == 93)
+
+    # End-to-end recommend() smoke test on a known-PROACTIVE cell.
+    hpa_for_test = pd.read_csv(DATA_DIR / "hpa_simulation_v2.csv")
+    try:
+        verdict = rcm.recommend(
+            workload_acf24=0.5, workload_cv=0.4, workload_hurst=0.78,
+            horizon="30min", target_util=0.7, safety_margin=1.2,
+            reactive_lag=1,
+            pareto_df=hpa_for_test,
+        )
+        check("recommend() returns a verdict on a known config",
+              verdict["kind"] in ("PROACTIVE_DOMINATES",
+                                  "REACTIVE_DOMINATES",
+                                  "NEITHER_DOMINATES"),
+              f"got kind={verdict['kind']}")
+        check("recommend() rendered_md contains the negative findings",
+              all(s in verdict["rendered_md"] for s in
+                  ["10 of 12", "ExtraTrees-alone", "0.9267", "0.80"]),
+              "missing one or more negative findings in rendered markdown")
+        check("recommend() ctx has all required keys",
+              all(k in verdict["ctx"] for k in
+                  ["horizon", "target_util", "safety_margin", "reactive_lag",
+                   "proactive_violation", "proactive_waste",
+                   "reactive_violation", "reactive_waste"]),
+              "missing ctx keys")
+    except Exception as exc:
+        check("recommend() runs without raising", False, str(exc))
+
+
+# ======================================================================
 # Summary
 # ======================================================================
 print("")
