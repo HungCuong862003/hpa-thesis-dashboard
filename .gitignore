@@ -37,3 +37,5 @@ urls.txt
 # them being version-controlled. The only data file that may be missing is
 # data/per_container_r2.csv (1.4 MB) — that one IS committed once you copy
 # it over from the thesis repo's results/alibaba/diagnostics/ folder.
+
+.venv/
